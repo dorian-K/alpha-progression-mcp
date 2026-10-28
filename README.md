@@ -53,13 +53,23 @@ Claude Desktop, Cursor and other clients: add this to the client's MCP config fi
 
 | Tool | What it returns |
 |---|---|
-| `get_sessions` | Your workouts, newest first: date, duration, sets, volume, and per exercise the muscle and heaviest set. Filter by date. |
+| `get_weekly_training` | Working sets and training days per muscle, per week and averaged. The main input for volume and frequency advice. |
+| `get_progress` | Which exercises are improving or stalled, by muscle group, based on estimated 1RM |
+| `get_sessions` | Recent workouts: duration, working sets, top set and e1RM per exercise, skipped exercises |
+| `get_exercise_history` | One exercise over time, with a summary and one row per workout |
 | `get_session` | One workout with every set (weight, reps, RIR, notes) |
-| `get_exercise_history` | How one exercise progressed over time |
-| `find_exercises` | Search exercises by name or muscle, with how often and when you last did them |
-| `get_plans` | Your training plans |
+| `find_exercises` | Search exercises by name, muscle or group, with how often and when you last did them |
+| `get_plans` | Your current training plan with set and rep targets |
 | `get_measurements` | Bodyweight, body fat and other measurements |
 | `get_document` | Any single record, for anything the others don't cover |
+
+### How the numbers are computed
+
+- **Working sets** leave out warm-ups (a weighted set under 75% of that exercise's heaviest set in the workout) and stretches. Hard sets are the usual unit for training volume in research.
+- **Sets per muscle** count 1 for the exercise's target muscle and 0.5 for its main secondary muscles (the first two listed for built-in exercises, all of them for your own). This "fractional" counting fit the data best in the meta-regressions on training volume by Pelland et al. (2024, SportRxiv preprint).
+- **Frequency** is the number of different days a muscle was trained in a week.
+- **Estimated 1RM (e1RM)** uses the Epley formula, weight × (1 + reps / 30), on sets of 12 reps or fewer. If you log RIR (reps in reserve), it is added to the reps.
+- **Progress** compares the median e1RM of the first and last three workouts in the range, so one good or bad day doesn't skew it.
 
 ## Troubleshooting
 

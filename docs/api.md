@@ -46,7 +46,7 @@ Times are epoch milliseconds. Weights carry their own unit (`weightUnit`: `kg` o
 
 Skipped or never-started sessions have no `date`. Unfinished sets have no `completed`.
 
-Built-in exercises are referenced as `exercise-<n>`. Their names, equipment and primary muscle are listed in `src/alpha_progression_mcp/exercises.json`; repeated names are disambiguated with the equipment, e.g. `Squats (barbell)`.
+Built-in exercises are referenced as `exercise-<n>`. Their names, equipment, primary muscle and secondary muscles (ordered by involvement) are listed in `src/alpha_progression_mcp/exercises.json`; repeated names are disambiguated with the equipment, e.g. `Squats (barbell)`.
 
 ## Other endpoints (not used by the MCP)
 
