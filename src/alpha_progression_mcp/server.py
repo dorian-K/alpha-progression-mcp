@@ -25,7 +25,7 @@ mcp = MCPServer(
     "alpha-progression",
     version=__version__,
     instructions=(
-        "Read-only access to the user's Alpha Progression strength-training data. "
+        "Access to the user's Alpha Progression strength-training data and workout plan. "
         "For training guidance start with get_weekly_training (sets per muscle per week, frequency) and "
         "get_progress (which exercises are improving or stalled). Use get_sessions for recent workouts, "
         "get_exercise_history for one lift over time and get_session for every set of one workout. "

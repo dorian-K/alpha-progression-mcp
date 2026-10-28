@@ -24,7 +24,14 @@ Requires [uv](https://docs.astral.sh/uv/getting-started/installation/).
    ```
    Other clients:
    ```json
-   {"mcpServers": {"alpha-progression": {"command": "uvx", "args": ["--from", "git+https://github.com/dorian-k/alpha-progression-mcp", "alpha-progression-mcp"]}}}
+   {
+     "mcpServers": {
+       "alpha-progression": {
+         "command": "uvx",
+         "args": ["--from", "git+https://github.com/dorian-k/alpha-progression-mcp", "alpha-progression-mcp"]
+       }
+     }
+   }
    ```
 3. Restart your client.
 
