@@ -18,7 +18,9 @@ def login(email: str, password: str) -> None:
     # The server expects sha256(password + salt), not the plain password.
     hashed = hashlib.sha256((password + s["PASSWORD_SALT"]).encode()).hexdigest()
     try:
-        resp = httpx.post(s["LOGIN_URL"], data={"apiKey": s["LOGIN_API_KEY"], "email": email, "password": hashed}, timeout=30)
+        resp = httpx.post(
+            s["LOGIN_URL"], data={"apiKey": s["LOGIN_API_KEY"], "email": email, "password": hashed}, timeout=30
+        )
         resp.raise_for_status()
     except httpx.HTTPError as e:
         raise AuthError(f"Could not reach the login server: {e}") from e

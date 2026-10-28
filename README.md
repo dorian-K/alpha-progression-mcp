@@ -77,8 +77,8 @@ Data is cached for 5 minutes, so a workout you just logged can take a moment to 
 ```sh
 git clone https://github.com/dorian-k/alpha-progression-mcp && cd alpha-progression-mcp
 uv sync
-uv run pytest
-uv run alpha-progression-mcp --help
+uv run pytest                                   # tests
+uv run ruff check . && uv run ruff format .     # lint and format
 ```
 
 How the sync protocol works is described in [`docs/api.md`](docs/api.md). If the app changes its settings, they can be overridden in `~/.config/alpha-progression-mcp/config.json` or with `ALPHA_PROGRESSION_<NAME>` environment variables (see `src/alpha_progression_mcp/config.py`).

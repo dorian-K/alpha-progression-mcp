@@ -34,4 +34,13 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pytest>=9.2.0",
+    "ruff>=0.17.3",
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, isort, bugbear, pyupgrade, simplify, naming, comprehensions, return values, pytest style, ruff's own
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "N", "C4", "RET", "PT", "RUF"]

@@ -20,6 +20,7 @@ def tmp_config(tmp_path, monkeypatch):
 def fake_login_response(monkeypatch, body: dict):
     def post(url, data, timeout):
         return httpx.Response(200, text=json.dumps(body), request=httpx.Request("POST", url))
+
     monkeypatch.setattr(auth.httpx, "post", post)
 
 
@@ -44,13 +45,20 @@ def test_not_logged_in():
 
 def test_workout_summary():
     workout = {
-        "_id": "w1", "name": "Day 1", "planId": "p1", "date": 1761649200000, "completed": 1761652800000,
+        "_id": "w1",
+        "name": "Day 1",
+        "planId": "p1",
+        "date": 1761649200000,
+        "completed": 1761652800000,
         "exercises": [
-            {"exerciseId": "exercise-169", "sets": [
-                {"weight": 100, "weightUnit": "kg", "reps": 5, "completed": 1},
-                {"weight": 100, "weightUnit": "kg", "reps": 6, "completed": 2},
-                {"weight": 100, "weightUnit": "kg"},  # planned, not done
-            ]},
+            {
+                "exerciseId": "exercise-169",
+                "sets": [
+                    {"weight": 100, "weightUnit": "kg", "reps": 5, "completed": 1},
+                    {"weight": 100, "weightUnit": "kg", "reps": 6, "completed": 2},
+                    {"weight": 100, "weightUnit": "kg"},  # planned, not done
+                ],
+            },
             {"exerciseId": "custom-1", "sets": [{"weight": 20, "weightUnit": "kg", "reps": 10, "completed": 3}]},
         ],
     }
@@ -64,12 +72,15 @@ def test_workout_summary():
 
 def test_every_built_in_exercise_has_a_unique_name():
     names = [e["name"] for e in server.BUILT_IN_EXERCISES.values()]
-    assert len(names) > 700 and all(names) and len(set(names)) == len(names)
+    assert len(names) > 700
+    assert all(names)
+    assert len(set(names)) == len(names)
 
 
 def test_all_tools_are_read_only():
     tools = asyncio.run(server.mcp.list_tools())
-    assert tools and all(t.annotations.read_only_hint for t in tools)
+    assert tools
+    assert all(t.annotations.read_only_hint for t in tools)
 
 
 def test_only_login_and_reads_are_sent():

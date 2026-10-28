@@ -101,8 +101,14 @@ def _summary(doc: dict, exercises: dict[str, dict], plans: dict[str, str]) -> di
         sets = _done(ex.get("sets"))
         all_sets += sets
         info = exercises.get(ex.get("exerciseId"), {})
-        items.append({"exercise": _name(ex.get("exerciseId"), exercises), "muscle": info.get("muscle"),
-                      "sets": len(sets), "best_set": _best(sets)})
+        items.append(
+            {
+                "exercise": _name(ex.get("exerciseId"), exercises),
+                "muscle": info.get("muscle"),
+                "sets": len(sets),
+                "best_set": _best(sets),
+            }
+        )
     start, end = _time(doc.get("date")), _time(doc.get("completed"))
     return {
         "id": doc["_id"],
@@ -129,7 +135,7 @@ def get_sessions(start_date: str = "", end_date: str = "", limit: int = 20, refr
     Data is cached for 5 minutes; set refresh=true to reload.
     """
     exercises, plans = _exercises(), {p["_id"]: p.get("name") for p in _docs("plan")}
-    recent = _workouts(start_date, end_date, refresh)[-max(1, limit):]
+    recent = _workouts(start_date, end_date, refresh)[-max(1, limit) :]
     return [_summary(d, exercises, plans) for d in reversed(recent)]
 
 
@@ -161,13 +167,15 @@ def get_exercise_history(exercise: str, start_date: str = "", end_date: str = ""
         for ex in doc.get("exercises") or []:
             sets = _done(ex.get("sets"))
             if ex.get("exerciseId") in ids and sets:
-                rows.append({
-                    "date": _iso(doc["date"]),
-                    "session_id": doc["_id"],
-                    "best_set": _best(sets),
-                    "volume_kg": _volume(sets),
-                    "sets": [{"weight_kg": _kg(s), "reps": s.get("reps"), "rir": s.get("rir")} for s in sets],
-                })
+                rows.append(
+                    {
+                        "date": _iso(doc["date"]),
+                        "session_id": doc["_id"],
+                        "best_set": _best(sets),
+                        "volume_kg": _volume(sets),
+                        "sets": [{"weight_kg": _kg(s), "reps": s.get("reps"), "rir": s.get("rir")} for s in sets],
+                    }
+                )
     return rows[::-1][: max(1, limit)]
 
 
@@ -191,8 +199,16 @@ def find_exercises(query: str = "", muscle: str = "", only_used: bool = True) ->
         if only_used and ex_id not in usage:
             continue
         dates = usage.get(ex_id, [])
-        results.append({"id": ex_id, "name": name, "muscle": e.get("muscle"), "equipment": e.get("equipment"),
-                        "times_done": len(dates), "last_done": _iso(max(dates)) if dates else None})
+        results.append(
+            {
+                "id": ex_id,
+                "name": name,
+                "muscle": e.get("muscle"),
+                "equipment": e.get("equipment"),
+                "times_done": len(dates),
+                "last_done": _iso(max(dates)) if dates else None,
+            }
+        )
     return sorted(results, key=lambda r: r["last_done"] or "", reverse=True)
 
 
@@ -217,10 +233,14 @@ def get_measurements() -> list[dict]:
     for doc in _docs("measurement"):
         values = sorted(doc.get("measurements") or [], key=lambda m: m.get("date") or 0)
         if values:
-            out.append({
-                "kind": doc["_id"].removeprefix("measurement-"),
-                "values": [{"date": _iso(m.get("date")), "value": m.get("value"), "unit": m.get("unit")} for m in values],
-            })
+            out.append(
+                {
+                    "kind": doc["_id"].removeprefix("measurement-"),
+                    "values": [
+                        {"date": _iso(m.get("date")), "value": m.get("value"), "unit": m.get("unit")} for m in values
+                    ],
+                }
+            )
     return out
 
 
