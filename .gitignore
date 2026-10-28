@@ -1,11 +1,7 @@
-# Never commit app binaries, third-party code or credentials
-*.apk
-*.xapk
-*.apks
-*.apkm
+# Credentials never belong in the repo (the token lives in ~/.config/alpha-progression-mcp/)
+token.json
 credentials*.json
 .env
-*.token
 
 # Python
 __pycache__/

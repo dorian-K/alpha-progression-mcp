@@ -32,9 +32,21 @@ The app stores `{email, name, token}` and never logs in again unless the user lo
 - The app does `db.replicate.from(remote)` on login and then a continuous two-way `db.sync(remote)`.
 - Read-only access needs only standard CouchDB reads: `GET /<db>` (info, `doc_count`), `GET /<db>/_all_docs?include_docs=true`, `GET /<db>/_changes`.
 
-### Document types
+### Documents
 
-Documents carry a `type` field. Known types include `session`, `plan`, `exercise` (custom exercises), `measurement`, `muscle`. Field-level schemas: TODO, mapped from real data.
+Times are epoch milliseconds. Weights carry their own unit (`weightUnit`: `kg` or `lbs`).
+
+| Document | Key fields |
+|---|---|
+| `type: "session"` | `date` (start), `completed` (end), `name`, `planId`, `week`, `deload`, `skipped`, `exercises[]` → `exerciseId`, `repsTarget`, `rirTarget`, `notes`, `sets[]` → `weight`, `weightUnit`, `reps`, `rir`, `duration`, `completed` |
+| `type: "plan"` | `name`, `active`, `days[]` → `name`, `exercises[]` → `exerciseId`, `weeks[]` (set/rep targets) |
+| `type: "exercise"` | A custom exercise: `name`, `equipment`, `muscle`, `secondary`, `deleted` |
+| `type: "measurement"` | `_id` is `measurement-<kind>` (e.g. `measurement-bodyweight`), `measurements[]` → `date`, `value`, `unit` |
+| no type | Singletons such as `settings`, `profile`, `gyms`, `stats` |
+
+Skipped or never-started sessions have no `date`. Unfinished sets have no `completed`.
+
+Built-in exercises are referenced as `exercise-<n>`. Their names, equipment and primary muscle are listed in `src/alpha_progression_mcp/exercises.json`; repeated names are disambiguated with the equipment, e.g. `Squats (barbell)`.
 
 ## Other endpoints (not used by the MCP)
 

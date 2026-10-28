@@ -53,12 +53,12 @@ Claude Desktop, Cursor and other clients: add this to the client's MCP config fi
 
 | Tool | What it returns |
 |---|---|
-| `get_sessions` | Your workouts, newest first: date, duration, sets, volume, exercises. Filter by date. |
-| `get_session` | One workout with every set (weight, reps, ...) |
+| `get_sessions` | Your workouts, newest first: date, duration, sets, volume, and per exercise the muscle and heaviest set. Filter by date. |
+| `get_session` | One workout with every set (weight, reps, RIR, notes) |
+| `get_exercise_history` | How one exercise progressed over time |
+| `find_exercises` | Search exercises by name or muscle, with how often and when you last did them |
 | `get_plans` | Your training plans |
 | `get_measurements` | Bodyweight, body fat and other measurements |
-| `get_custom_exercises` | Exercises you created |
-| `get_account_info`, `list_document_types` | Connection check and an overview of your data |
 | `get_document` | Any single record, for anything the others don't cover |
 
 ## Troubleshooting
