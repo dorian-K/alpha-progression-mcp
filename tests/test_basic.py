@@ -6,7 +6,7 @@ import re
 import httpx
 import pytest
 
-from alpha_progression_mcp import analysis, auth, config, server
+from alpha_progression_mcp import analysis, auth, config, matching, plans, server
 
 
 @pytest.fixture(autouse=True)
@@ -50,11 +50,16 @@ def _set(weight, reps, done=True, **kw):
 def test_working_sets_drop_warmups_and_planned_sets():
     sets = analysis.performed([_set(20, 10), _set(40, 8), _set(60, 6), _set(60, 5), _set(60, 6, done=False)])
     assert [s["weight"] for s in analysis.working_sets(sets)] == [60, 60]
+    ramp_then_backoff = analysis.performed(
+        [_set(20, 10), _set(60, 8), _set(90, 6), _set(110, 5), _set(110, 4), _set(90, 8)]
+    )
+    assert [s["weight"] for s in analysis.working_sets(ramp_then_backoff)] == [110, 110, 90]
 
 
 def test_e1rm_uses_rir_and_caps_reps():
     assert analysis.e1rm(_set(60, 6)) == 72.0
     assert analysis.e1rm(_set(60, 4, rir=2)) == 72.0
+    assert analysis.e1rm(_set(5, 15)) == 7.5
     assert analysis.e1rm(_set(20, 20)) is None
     assert analysis.e1rm({"reps": 10}) is None
 
@@ -91,14 +96,93 @@ def test_every_built_in_exercise_has_a_unique_name():
     assert len(set(names)) == len(names)
 
 
-def test_all_tools_are_read_only():
-    tools = asyncio.run(server.mcp.list_tools())
+def test_only_plan_tools_write():
+    tools = {t.name: t.annotations for t in asyncio.run(server.mcp.list_tools())}
+    for name in ("set_plan_targets", "add_plan_exercise", "swap_plan_exercise", "remove_plan_exercise"):
+        assert not tools.pop(name).read_only_hint
     assert tools
-    assert all(t.annotations.read_only_hint for t in tools)
+    assert all(a.read_only_hint for a in tools.values())
 
 
-def test_only_login_and_reads_are_sent():
-    """Only the login endpoint and GET requests to the user's own database. No paid (Pro) or account features."""
+def test_only_login_and_own_database_are_contacted():
+    """The login endpoint plus the user's own database. No paid (Pro) or account endpoints."""
     code = "\n".join(p.read_text() for p in pathlib.Path(server.__file__).parent.glob("*.py"))
     assert set(re.findall(r"alphaprogression\.com/api/[\w/.-]+", code)) == {"alphaprogression.com/api/v3/user-login"}
-    assert sorted(re.findall(r"httpx\.(\w+)\(", code)) == ["get", "post"]  # one login POST, reads are GET
+    assert sorted(re.findall(r"httpx\.(\w+)\(", code)) == ["post", "request"]
+    assert re.findall(r'_request\("(\w+)"', code) == ["GET", "GET", "PUT"]
+
+
+def test_only_plans_can_be_written():
+    with pytest.raises(ValueError, match="Only training plans"):
+        server.couch.put({"_id": "settings", "type": None})
+
+
+PLAN = {
+    "_id": "p1",
+    "type": "plan",
+    "days": [
+        {"name": "Day 1", "exercises": [{"_id": "e1", "exerciseId": "exercise-28", "weeks": [{"sets": 3, "reps": 6}]}]}
+    ],
+}
+EXERCISES = {
+    "exercise-28": {"name": "Bench Press (barbell)"},
+    "exercise-30": {"name": "Bench Press (smith machine)"},
+    "exercise-169": {"name": "Squats (barbell)"},
+    "exercise-251": {"name": "Rows with Close Grip (cable)"},
+}
+
+
+def test_plan_edits_are_targeted():
+    new = plans.edit(PLAN, EXERCISES, "set", "1", "bench press barbell", sets=4, reps=8)
+    new = plans.edit(new, EXERCISES, "add", "day1", "squats", sets=3, reps=5, after="bench")
+    new = plans.edit(new, EXERCISES, "swap", "Day 1", "Squats (barbell)", new_exercise="rows close grip")
+    assert [(e["exerciseId"], e["weeks"]) for e in new["days"][0]["exercises"]] == [
+        ("exercise-28", [{"sets": 4, "reps": 8}]),
+        ("exercise-251", [{"sets": 3, "reps": 5}]),
+    ]
+    assert PLAN["days"][0]["exercises"][0]["weeks"] == [{"sets": 3, "reps": 6}]  # original untouched
+    assert plans.edit(new, EXERCISES, "remove", "1", "rows")["days"][0]["exercises"] == new["days"][0]["exercises"][:1]
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (("set", "Day 1", "bench", {"sets": 50}), "sets must be"),
+        (("set", "Day 7", "bench", {"sets": 3}), "Days in this plan: Day 1"),
+        (("set", "Day 1", "squats", {"sets": 3}), "not on Day 1"),
+        (("add", "Day 1", "bench press barbell", {"sets": 3, "reps": 5}), "already on Day 1"),
+        (("add", "Day 1", "bench press", {"sets": 3, "reps": 5}), "matches several"),
+        (("add", "Day 1", "Bnch Pres", {"sets": 3, "reps": 5}), "Did you mean"),
+    ],
+)
+def test_bad_plan_edits_explain_themselves(args, message):
+    op, day, exercise, kw = args
+    with pytest.raises(matching.InputError, match=message):  # PlanEditError is an InputError
+        plans.edit(PLAN, EXERCISES, op, day, exercise, **kw)
+
+
+@pytest.mark.parametrize(
+    "plan",
+    [
+        {**PLAN, "periodisation": True},
+        {**PLAN, "planGenerator": True},
+        {**PLAN, "days": [{"name": "Day 1", "exercises": [{"exerciseId": "x", "weeks": [{"sets": 3}, {"sets": 4}]}]}]},
+    ],
+)
+def test_pro_plans_are_refused(plan):
+    with pytest.raises(plans.PlanEditError, match="Pro features"):
+        plans.edit(plan, EXERCISES, "set", "Day 1", "bench", sets=3)
+
+
+def test_input_checks():
+    with pytest.raises(matching.InputError, match="Groups: arms"):
+        matching.check_muscle("pecs")
+    with pytest.raises(matching.InputError, match="like 2026-10-28"):
+        matching.parse_date("28.10.2026", "start_date")
+
+
+def test_ambiguous_names_resolve_to_the_clearly_most_used():
+    usage = {"exercise-28": 136, "exercise-30": 3}
+    assert matching.match_exercise("bench press", EXERCISES, usage) == {"exercise-28"}
+    with pytest.raises(matching.InputError, match="matches several"):
+        matching.match_exercise("bench press", EXERCISES, {"exercise-28": 4, "exercise-30": 3})

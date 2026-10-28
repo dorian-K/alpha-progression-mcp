@@ -30,7 +30,8 @@ The app stores `{email, name, token}` and never logs in again unless the user lo
 - Base URL: `https://<account>-bluemix.cloudant.com/<name>` (`COUCH_URL` in `config.py`).
 - HTTP basic auth: username = `name`, password = `token`.
 - The app does `db.replicate.from(remote)` on login and then a continuous two-way `db.sync(remote)`.
-- Read-only access needs only standard CouchDB reads: `GET /<db>` (info, `doc_count`), `GET /<db>/_all_docs?include_docs=true`, `GET /<db>/_changes`.
+- Reads are standard CouchDB: `GET /<db>/_all_docs?include_docs=true` and `GET /<db>/<id>`.
+- Writes are `PUT /<db>/<id>` with the current `_rev`; CouchDB answers `409` if the document changed meanwhile. This project only writes `plan` documents.
 
 ### Documents
 
@@ -39,10 +40,12 @@ Times are epoch milliseconds. Weights carry their own unit (`weightUnit`: `kg` o
 | Document | Key fields |
 |---|---|
 | `type: "session"` | `date` (start), `completed` (end), `name`, `planId`, `week`, `deload`, `skipped`, `exercises[]` → `exerciseId`, `repsTarget`, `rirTarget`, `notes`, `sets[]` → `weight`, `weightUnit`, `reps`, `rir`, `duration`, `completed` |
-| `type: "plan"` | `name`, `active`, `days[]` → `name`, `exercises[]` → `exerciseId`, `weeks[]` (set/rep targets) |
+| `type: "plan"` | `name`, `active`, `lastChanged`, `days[]` → `name`, `exercises[]` → `_id`, `exerciseId`, `weeks[]` → `sets`, `reps`, `duration` |
 | `type: "exercise"` | A custom exercise: `name`, `equipment`, `muscle`, `secondary`, `deleted` |
 | `type: "measurement"` | `_id` is `measurement-<kind>` (e.g. `measurement-bodyweight`), `measurements[]` → `date`, `value`, `unit` |
 | no type | Singletons such as `settings`, `profile`, `gyms`, `stats` |
+
+In the free version a plan exercise has exactly one `weeks` entry and no `rir` target; RIR tracking (`trackRir`), deloads, periodisation and generated plans are Pro features.
 
 Skipped or never-started sessions have no `date`. Unfinished sets have no `completed`.
 

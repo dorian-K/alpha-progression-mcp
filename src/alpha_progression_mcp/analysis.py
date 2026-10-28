@@ -5,10 +5,10 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 
 LB_TO_KG = 0.45359237
-WORKING_SET_RATIO = 0.75  # a weighted set below 75% of the session's heaviest set for that exercise is a warm-up
+HEAVY_SET_RATIO = 0.9  # the first set at >= 90% of the top weight ends the warm-up
 SECONDARY_WEIGHT = 0.5  # fractional counting: a set counts half for a secondary muscle (Pelland et al.)
 SECONDARY_COUNTED = 2  # built-in exercises list stabilisers too; only the first two secondaries count
-MAX_E1RM_REPS = 12  # rep-based 1RM estimates get unreliable above this
+MAX_E1RM_REPS = 15  # rep-based 1RM estimates get unreliable above this
 
 MUSCLE_GROUPS = {
     "chest": "chest",
@@ -67,9 +67,13 @@ def is_mobility(name: str | None, sets: list[dict]) -> bool:
 
 
 def working_sets(sets: list[dict]) -> list[dict]:
-    """Performed sets minus warm-ups. Unweighted sets (bodyweight, holds) always count."""
+    """Performed sets minus warm-ups: the lighter sets logged before the first heavy set.
+
+    Lighter sets after it (back-off sets) count, and so do unweighted sets (bodyweight, holds).
+    """
     top = max((kg(s) or 0 for s in sets), default=0)
-    return [s for s in sets if not kg(s) or not top or kg(s) >= WORKING_SET_RATIO * top]
+    first_heavy = next((i for i, s in enumerate(sets) if (kg(s) or 0) >= HEAVY_SET_RATIO * top), 0)
+    return [s for i, s in enumerate(sets) if not kg(s) or i >= first_heavy]
 
 
 def e1rm(s: dict) -> float | None:
@@ -118,7 +122,6 @@ def exercise_rows(workout: dict, exercises: dict[str, dict]) -> list[dict]:
                 "muscle": info.get("muscle"),
                 "secondary": info.get("secondary_counted", []),
                 "mobility": is_mobility(name, sets),
-                "planned": len(ex.get("sets") or []),
                 "sets": sets,
                 "working": work,
                 "e1rm": max((v for v in map(e1rm, work) if v), default=None),

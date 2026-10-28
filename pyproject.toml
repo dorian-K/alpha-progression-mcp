@@ -1,7 +1,7 @@
 [project]
 name = "alpha-progression-mcp"
 version = "0.1.0"
-description = "MCP server for Alpha Progression: let Claude and other AI assistants read your gym workouts, sets, plans and bodyweight"
+description = "MCP server for Alpha Progression: let Claude analyse your gym training and adjust your plan"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

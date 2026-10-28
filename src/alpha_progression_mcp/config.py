@@ -7,6 +7,10 @@ from pathlib import Path
 CONFIG_DIR = Path(os.environ.get("ALPHA_PROGRESSION_CONFIG_DIR", Path.home() / ".config" / "alpha-progression-mcp"))
 TOKEN_FILE = CONFIG_DIR / "token.json"
 CONFIG_FILE = CONFIG_DIR / "config.json"
+BACKUP_DIR = CONFIG_DIR / "backups"
+
+# Set ALPHA_PROGRESSION_READ_ONLY=1 (e.g. in the MCP client config) to turn off plan editing.
+ALLOW_WRITES = os.environ.get("ALPHA_PROGRESSION_READ_ONLY") != "1"
 
 # Settings used by the app (version 7.7). If the app changes them, override any of them in CONFIG_FILE
 # or with an ALPHA_PROGRESSION_<NAME> environment variable.
@@ -29,7 +33,7 @@ def settings() -> dict:
 
 def write_private(path: Path, data: dict) -> None:
     """Write JSON that only the current user can read."""
-    CONFIG_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump(data, f)

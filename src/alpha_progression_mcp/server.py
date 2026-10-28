@@ -1,22 +1,22 @@
-"""Read-only MCP tools for Alpha Progression data, plus the `login` and `status` commands."""
+"""MCP tools for Alpha Progression data (read-only, plus plan editing) and the `login` and `status` commands."""
 
 import getpass
 import json
 import logging
 import statistics
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, timedelta
 from importlib.resources import files
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
-from . import __version__
+from . import __version__, config, plans
 from . import analysis as a
 from .auth import login
-from .config import TOKEN_FILE
 from .couch import Couch
+from .matching import check_muscle, match_exercise, norm, parse_date
 
 # httpx logs every request URL at INFO level, and the URL contains the user's database name.
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -29,8 +29,12 @@ mcp = MCPServer(
         "For training guidance start with get_weekly_training (sets per muscle per week, frequency) and "
         "get_progress (which exercises are improving or stalled). Use get_sessions for recent workouts, "
         "get_exercise_history for one lift over time and get_session for every set of one workout. "
-        "Working sets exclude warm-ups (sets under 75% of the session's top weight) and stretches. "
+        "Working sets exclude warm-ups (lighter sets logged before the first heavy set) and stretches. "
         "Estimated 1RM (e1RM) uses the Epley formula. "
+        "To change the plan use set_plan_targets, add_plan_exercise, swap_plan_exercise or remove_plan_exercise: "
+        "one change per call, "
+        "first without apply to get a preview, then with apply=true only after the user approved it. "
+        "Names may be partial; if a tool returns an error it lists the valid options. "
         "If a tool says the user is not logged in, ask them to run `alpha-progression-mcp login` in a terminal."
     ),
 )
@@ -63,9 +67,9 @@ def _exercises() -> dict[str, dict]:
 
 
 def _range(start_date: str, end_date: str, default_days: int | None) -> tuple[date, date]:
-    end = date.fromisoformat(end_date) if end_date else date.today()
+    end = parse_date(end_date, "end_date") if end_date else date.today()
     if start_date:
-        start = date.fromisoformat(start_date)
+        start = parse_date(start_date, "start_date")
     else:
         start = end - timedelta(days=default_days) if default_days else date.min
     return start, end
@@ -77,9 +81,18 @@ def _workouts(start: date = date.min, end: date = date.max, refresh: bool = Fals
     return sorted((d for d in done if start <= a.to_time(d["date"]).date() <= end), key=lambda d: d["date"])
 
 
+def _usage() -> dict[str, int]:
+    """How many workouts each exercise was done in."""
+    return dict(
+        Counter(
+            ex.get("exerciseId") for w in _workouts() for ex in w.get("exercises") or [] if a.performed(ex.get("sets"))
+        )
+    )
+
+
 def _resolve(exercise: str, exercises: dict[str, dict]) -> set[str]:
-    """Exercise ids matching an id or a case-insensitive exact name."""
-    return {exercise} | {i for i, e in exercises.items() if (e.get("name") or "").lower() == exercise.lower()}
+    """Exercise ids for a name or id; partial names resolve among the exercises the user does most."""
+    return match_exercise(exercise, exercises, _usage())
 
 
 # --- Tools -------------------------------------------------------------------
@@ -121,7 +134,7 @@ def get_sessions(start_date: str = "", end_date: str = "", limit: int = 20, refr
                     }
                     for r in training
                 ],
-                "skipped": [r["name"] for r in rows if r["planned"] and not r["sets"]],
+                "skipped": [r["name"] for r in rows if not r["sets"]],
                 "mobility": [r["name"] for r in rows if r["sets"] and r["mobility"]],
             }
         )
@@ -143,14 +156,18 @@ def get_session(session_id: str) -> dict:
 
 
 @mcp.tool(annotations=READ_ONLY)
-def get_weekly_training(start_date: str = "", end_date: str = "", muscle: str = "") -> dict:
+def get_weekly_training(
+    start_date: str = "", end_date: str = "", muscle: str = "", skip_empty_weeks: bool = True
+) -> dict:
     """Weekly training load, the main input for volume and frequency guidance. Defaults to the last 8 weeks.
 
     Per week (Monday start): workouts, minutes, working sets, and per muscle the fractional working sets
     (1 per set for the target muscle, 0.5 for its main secondary muscles) and frequency (days trained).
-    `average_per_week` gives the same per muscle averaged over the range, with its muscle group.
+    `average_per_week` gives the same per muscle averaged over the range, with its muscle group. Weeks without
+    any workout (holiday, illness) are left out of the average unless skip_empty_weeks=false.
     Filter with `muscle` (e.g. "chest") or a group: chest, back, shoulders, arms, legs, core.
     """
+    muscle = check_muscle(muscle)
     start, end = _range(start_date, end_date, 7 * 8 - 1)
     start = a.week_start(start)
     exercises = _exercises()
@@ -183,15 +200,18 @@ def get_weekly_training(start_date: str = "", end_date: str = "", muscle: str = 
     muscles = sorted(
         {m for wk in weeks.values() for m in wk["sets"] if keep(m)}, key=lambda m: (a.MUSCLE_GROUPS.get(m, "z"), m)
     )
-    n = max(1, len(weeks))
+    counted = [wk for wk in weeks.values() if wk["workouts"] or not skip_empty_weeks]
+    n = max(1, len(counted))
     return {
         "range": [start.isoformat(), end.isoformat()],
+        "weeks_averaged": len(counted),
+        "weeks_without_workouts": sum(1 for wk in weeks.values() if not wk["workouts"]),
         "average_per_week": [
             {
                 "muscle": m,
                 "group": a.MUSCLE_GROUPS.get(m),
-                "sets": round(sum(wk["sets"][m] for wk in weeks.values()) / n, 1),
-                "frequency": round(sum(len(wk["days"][m]) for wk in weeks.values()) / n, 1),
+                "sets": round(sum(wk["sets"][m] for wk in counted) / n, 1),
+                "frequency": round(sum(len(wk["days"][m]) for wk in counted) / n, 1),
             }
             for m in muscles
         ],
@@ -218,6 +238,7 @@ def get_progress(start_date: str = "", end_date: str = "", muscle: str = "", min
     change in % and the last date. Unweighted exercises compare top-set reps instead.
     Sorted by muscle group. Filter with `muscle` or a group (chest, back, shoulders, arms, legs, core).
     """
+    muscle = check_muscle(muscle)
     start, end = _range(start_date, end_date, 182)
     exercises = _exercises()
     history: dict[str, list[tuple[int, dict]]] = defaultdict(list)
@@ -232,8 +253,12 @@ def get_progress(start_date: str = "", end_date: str = "", muscle: str = "", min
         m = info.get("muscle")
         if len(rows) < min_sessions or (muscle and muscle not in (m, a.MUSCLE_GROUPS.get(m))):
             continue
-        weighted = all(r["e1rm"] for _, r in rows)
+        # Compare e1RM when most sessions have one, else top-set reps (bodyweight exercises).
+        weighted = sum(1 for _, r in rows if r["e1rm"]) >= len(rows) * 2 / 3
         metric = [r["e1rm"] if weighted else (a.top_set(r["working"]) or {}).get("reps") or 0 for _, r in rows]
+        metric = [m for m in metric if m]
+        if len(metric) < min_sessions:
+            continue
         first, last = statistics.median(metric[:3]), statistics.median(metric[-3:])
         out.append(
             {
@@ -258,8 +283,8 @@ def get_exercise_history(
     exercise: str, start_date: str = "", end_date: str = "", limit: int = 100, include_sets: bool = False
 ) -> dict:
     """One exercise over time: a summary plus one row per workout (newest first) with the top set,
-    e1RM, working sets and volume. `exercise` is a name as shown elsewhere (case-insensitive) or an id;
-    use find_exercises if unsure. include_sets=true adds every set, including warm-ups.
+    e1RM, working sets and volume. `exercise` is a name (partial names like "bench press" work if they are
+    unambiguous) or an id. include_sets=true adds every set, including warm-ups.
     """
     start, end = _range(start_date, end_date, None)
     exercises = _exercises()
@@ -283,7 +308,7 @@ def get_exercise_history(
                 rows.append(row)
     e = [r["e1rm_kg"] for r in rows if r["e1rm_kg"]]
     best = max(rows, key=lambda r: r["e1rm_kg"] or 0, default=None)
-    info = exercises.get(next(iter(ids & exercises.keys()), ""), {})
+    info = exercises[sorted(ids)[0]]
     return {
         "exercise": info.get("name") or exercise,
         "muscle": info.get("muscle"),
@@ -305,6 +330,7 @@ def find_exercises(query: str = "", muscle: str = "", only_used: bool = True) ->
 
     By default only exercises the user has done, with how often and when last.
     """
+    muscle, words = check_muscle(muscle), norm(query).split()
     exercises = _exercises()
     usage: dict[str, list[int]] = defaultdict(list)
     for w in _workouts():
@@ -314,7 +340,7 @@ def find_exercises(query: str = "", muscle: str = "", only_used: bool = True) ->
     results = []
     for ex_id, e in exercises.items():
         name, m = e.get("name") or ex_id, e.get("muscle")
-        if query.lower() not in name.lower() or (muscle and muscle not in (m, a.MUSCLE_GROUPS.get(m))):
+        if not all(w in norm(name) for w in words) or (muscle and muscle not in (m, a.MUSCLE_GROUPS.get(m))):
             continue
         if only_used and ex_id not in usage:
             continue
@@ -394,6 +420,119 @@ def get_document(doc_id: str) -> dict:
     return couch.get(doc_id)
 
 
+# --- Plan editing (turned off by ALPHA_PROGRESSION_READ_ONLY=1) -------------------------
+
+
+def _plan_diff(before: dict, after: dict, exercises: dict[str, dict]) -> list[str]:
+    """Readable list of what changed, e.g. "Day 1: Bench Press (barbell) 5 x 10 -> 4 x 6"."""
+
+    def describe(entry: dict) -> tuple[str, str]:
+        w = (entry.get("weeks") or [{}])[0]
+        name = exercises.get(entry.get("exerciseId"), {}).get("name") or entry.get("exerciseId")
+        amount = f"{w.get('duration')} s" if w.get("duration") else w.get("reps")
+        return name, f"{w.get('sets')} x {amount}"
+
+    out = []
+    for old_day, new_day in zip(before["days"], after["days"], strict=True):
+        old = {e["_id"]: describe(e) for e in old_day.get("exercises") or []}
+        kept = {e["_id"] for e in new_day.get("exercises") or []}
+        out += [f"{new_day.get('name')}: remove {name} {target}" for i, (name, target) in old.items() if i not in kept]
+        for entry in new_day.get("exercises") or []:
+            name, target = describe(entry)
+            if entry["_id"] not in old:
+                out.append(f"{new_day.get('name')}: add {name} {target}")
+            elif old[entry["_id"]] != (name, target):
+                old_name, old_target = old[entry["_id"]]
+                label = name if old_name == name else f"{old_name} -> {name}"
+                out.append(f"{new_day.get('name')}: {label} {old_target} -> {target}")
+    return out
+
+
+def _edit(op: str, day: str, exercise: str, plan: str, apply: bool, **kw) -> dict:
+    """Preview or save one change to a plan (the active one unless `plan` names another)."""
+    exercises = _exercises()
+    all_plans = _docs("plan", refresh=True)
+    found = (
+        [p for p in all_plans if norm(p.get("name") or "") == norm(plan)]
+        if plan
+        else [p for p in all_plans if p.get("active")]
+    )
+    if len(found) != 1:
+        names = ", ".join(p.get("name") or "?" for p in all_plans)
+        raise plans.PlanEditError(
+            f"No plan {plan!r}. Plans: {names}" if plan else "No active plan. Name one with `plan`."
+        )
+    current = found[0]
+    edited = plans.edit(current, exercises, op, day, exercise, _usage(), **kw)
+    result = {"plan": current.get("name"), "change": _plan_diff(current, edited, exercises), "saved": False}
+    if not apply:
+        result["next_step"] = (
+            "Show this change to the user. If they approve, call again with the same arguments and apply=true."
+        )
+        return result
+    config.write_private(config.BACKUP_DIR / f"{current['_id']}-{current['_rev']}.json", current)
+    couch.put(edited)
+    result["saved"] = True
+    result["next_step"] = "Saved. The app shows it after its next sync (reopen the app if needed)."
+    return result
+
+
+def set_plan_targets(
+    day: str, exercise: str, sets: int | None = None, reps: int | None = None, plan: str = "", apply: bool = False
+) -> dict:
+    """Change the target sets and/or reps of one exercise in the training plan.
+
+    Example: day="Day 1", exercise="Bench Press", sets=4, reps=6. `day` is a day name or number.
+    Returns a preview; nothing is saved unless apply=true (only after the user approved the preview).
+    """
+    return _edit("set", day, exercise, plan, apply, sets=sets, reps=reps)
+
+
+def add_plan_exercise(
+    day: str, exercise: str, sets: int, reps: int, after: str = "", plan: str = "", apply: bool = False
+) -> dict:
+    """Add one exercise to a day of the training plan, at the end or right after the exercise named in `after`.
+
+    Example: day="Day 2", exercise="Seated Leg Curls (machine)", sets=3, reps=10, after="Deadlifts".
+    Returns a preview; nothing is saved unless apply=true (only after the user approved the preview).
+    """
+    return _edit("add", day, exercise, plan, apply, sets=sets, reps=reps, after=after)
+
+
+def swap_plan_exercise(
+    day: str,
+    exercise: str,
+    new_exercise: str,
+    sets: int | None = None,
+    reps: int | None = None,
+    plan: str = "",
+    apply: bool = False,
+) -> dict:
+    """Replace one exercise on a day of the training plan with another, keeping its targets unless sets/reps are given.
+
+    Example: day="Day 2", exercise="Overhead Triceps Extensions", new_exercise="Dips", sets=3, reps=8.
+    Returns a preview; nothing is saved unless apply=true (only after the user approved the preview).
+    """
+    return _edit("swap", day, exercise, plan, apply, new_exercise=new_exercise, sets=sets, reps=reps)
+
+
+def remove_plan_exercise(day: str, exercise: str, plan: str = "", apply: bool = False) -> dict:
+    """Take one exercise off a day of the training plan. Past workouts with it stay in the history.
+
+    Example: day="Day 2", exercise="Overhead Triceps Extensions".
+    Returns a preview; nothing is saved unless apply=true (only after the user approved the preview).
+    """
+    return _edit("remove", day, exercise, plan, apply)
+
+
+if config.ALLOW_WRITES:
+    PLAN_WRITE = ToolAnnotations(
+        read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=True
+    )
+    for tool in (set_plan_targets, add_plan_exercise, swap_plan_exercise, remove_plan_exercise):
+        mcp.tool(annotations=PLAN_WRITE)(tool)
+
+
 # --- Command line ------------------------------------------------------------
 
 USAGE = """Usage: alpha-progression-mcp [command]
@@ -420,7 +559,7 @@ def _login() -> int:
     except Exception as e:
         print(f"Login failed: {e}", file=sys.stderr)
         return 1
-    print(f"Logged in. Token saved to {TOKEN_FILE}.")
+    print(f"Logged in. Token saved to {config.TOKEN_FILE}.")
     return _status()
 
 
