@@ -6,7 +6,7 @@ Connect **Claude** (or any [MCP](https://modelcontextprotocol.io) client) to you
 - "Which lifts have stalled in the last 3 months?"
 - "Add a hamstring exercise to Day 2 and lower bench to 4 × 6."
 
-<!-- mcp-name: io.github.dorian-k/alpha-progression-mcp -->
+<!-- mcp-name: io.github.dorian-K/alpha-progression-mcp -->
 
 > Unofficial, not affiliated with Alpha Progression. Use it only with your own account.
 
@@ -16,11 +16,11 @@ Requires [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 1. Log in once. Your email and password are not saved, only an access token (`~/.config/alpha-progression-mcp/token.json`):
    ```sh
-   uvx --from git+https://github.com/dorian-k/alpha-progression-mcp alpha-progression-mcp login
+   uvx alpha-progression-mcp login
    ```
 2. Add it to Claude Code:
    ```sh
-   claude mcp add alpha-progression -- uvx --from git+https://github.com/dorian-k/alpha-progression-mcp alpha-progression-mcp
+   claude mcp add alpha-progression -- uvx alpha-progression-mcp
    ```
    Other clients:
    ```json
@@ -28,7 +28,7 @@ Requires [uv](https://docs.astral.sh/uv/getting-started/installation/).
      "mcpServers": {
        "alpha-progression": {
          "command": "uvx",
-         "args": ["--from", "git+https://github.com/dorian-k/alpha-progression-mcp", "alpha-progression-mcp"]
+         "args": ["alpha-progression-mcp"]
        }
      }
    }
@@ -59,7 +59,7 @@ Requires [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 - **"Not logged in" / "login has expired":** run the login command again.
 - **"Too many login attempts":** wait a few minutes; Alpha Progression locks login after wrong passwords.
-- **Check the connection:** `uvx --from git+https://github.com/dorian-k/alpha-progression-mcp alpha-progression-mcp status`
+- **Check the connection:** `uvx alpha-progression-mcp status`
 - **Log out:** delete `~/.config/alpha-progression-mcp/token.json`.
 
 ## Development
