@@ -1,0 +1,16 @@
+# Never commit app binaries, third-party code or credentials
+*.apk
+*.xapk
+*.apks
+*.apkm
+credentials*.json
+.env
+*.token
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+*.egg-info/

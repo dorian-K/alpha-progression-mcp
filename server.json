@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.dorian-k/alpha-progression-mcp",
+  "description": "Read your Alpha Progression gym workouts, sets, plans and bodyweight (read-only).",
+  "repository": {
+    "url": "https://github.com/dorian-k/alpha-progression-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "alpha-progression-mcp",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" }
+    }
+  ]
+}
